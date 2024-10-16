@@ -2,14 +2,8 @@ import sys
 import csv
 import math
 from collections import defaultdict
-#import heapq
 import time as time_module
-import threading
-#import multiprocessing
-import cProfile
-#from functools import lru_cache
-
-
+from functools import lru_cache
 class MinHeap:
     def __init__(self):
         self.heap = []
@@ -59,17 +53,14 @@ class MinHeap:
             self._sift_down(min_index)
 
 class Hilberts:
-
     def __init__(self):
         self.channels = {1: 2, 2: 3, 3: 5, 4: 7, 5: 11}
-        #self.guests_per_channel = defaultdict(int)
         self.guests_per_channel = {}
         self.manual_rooms = set()
-        self.manual_room_info = {}  # To store additional info for manual rooms
+        self.manual_room_info = {}
         self.function_times = {}
         self.highest_occupied_room = 0
         self.removed_rooms = set()
-        self.lock = threading.Lock()  # For thread safety
 
     def track_time(func):
         def wrapper(self, *args, **kwargs):
@@ -80,7 +71,7 @@ class Hilberts:
             self.function_times[func.__name__] = self.function_times.get(func.__name__, 0) + execution_time
             return result
         return wrapper
-    
+
     @track_time
     def add_room_manual(self, room_number, guest_info, channel):
         room_number = int(room_number)
@@ -93,29 +84,17 @@ class Hilberts:
         self.manual_room_info[room_number] = (guest_info, channel)
         self.update_highest_occupied_room(room_number)
         return f"Room {room_number} added manually with guest info: {guest_info}"
-    # def add_room_manual(self, room_number, guest_info, channel):
-    #     room_number = int(room_number)
-    #     if self.is_room_occupied(room_number):
-    #         suggested_rooms = self.suggest_rooms(7)
-    #         return f"Error: Room {room_number} is already occupied. Suggested unoccupied rooms: {', '.join(map(str, suggested_rooms))}"
-    #     with self.lock:
-    #         self.manual_rooms.add(room_number)
-    #         self.manual_room_info[room_number] = (guest_info, channel)
-    #         self.update_highest_occupied_room(room_number)
-    #         # Invalidate the cached is_room_occupied result for this room
-    #         self.is_room_occupied.cache_clear()
-    #     return f"Room {room_number} added manually with guest info: {guest_info}"
+     
     
     @track_time
     def recalculate_highest_occupied_room(self):
-        with self.lock:
-            highest_manual = max(self.manual_rooms) if self.manual_rooms else 0
-            highest_channel = max(
-                self.channels[channel] ** self.guests_per_channel[channel]
-                for channel in self.channels
-                if self.guests_per_channel[channel] > 0
-            ) if any(self.guests_per_channel.values()) else 0
-            self.highest_occupied_room = max(highest_manual, highest_channel)
+        highest_manual = max(self.manual_rooms) if self.manual_rooms else 0
+        highest_channel = max(
+            self.channels[channel] ** self.guests_per_channel[channel]
+            for channel in self.channels
+            if self.guests_per_channel[channel] > 0
+        ) if any(self.guests_per_channel.values()) else 0
+        self.highest_occupied_room = max(highest_manual, highest_channel)
 
     
     @track_time
@@ -123,41 +102,32 @@ class Hilberts:
         room_number = int(room_number)
         print(f"Attempting to remove room {room_number}")
 
-        # Check if the room has already been removed
         if room_number in self.removed_rooms:
             print(f"Room {room_number} was already removed.")
             return f"Room {room_number} was already removed. No action needed."
 
-        # Use the lock efficiently by only locking the critical section
-        with self.lock:
-            # Check manual rooms first (O(1) operation)
-            if room_number in self.manual_rooms:
-                print(f"Room {room_number} found in manual rooms.")
-                self.manual_rooms.remove(room_number)
-                del self.manual_room_info[room_number]
-                self.removed_rooms.add(room_number)
-                if room_number == self.highest_occupied_room:
-                    self.recalculate_highest_occupied_room()
-                return f"Room {room_number} removed from manual rooms"
+        if room_number in self.manual_rooms:
+            print(f"Room {room_number} found in manual rooms.")
+            self.manual_rooms.remove(room_number)
+            del self.manual_room_info[room_number]
+            self.removed_rooms.add(room_number)
+            if room_number == self.highest_occupied_room:
+                self.recalculate_highest_occupied_room()
+            return f"Room {room_number} removed from manual rooms"
 
-            # Check channel rooms efficiently
-            for channel, base in self.channels.items():
-                if room_number % base == 0:
-                    exponent = int(math.log(room_number, base))
-                    print(f"Room {room_number} found in channel {channel} with base {base} and exponent {exponent}.")
-                    if exponent <= self.guests_per_channel[channel]:
-                        self.guests_per_channel[channel] -= 1
-                        self.removed_rooms.add(room_number)
-                        if room_number == self.highest_occupied_room:
-                            self.recalculate_highest_occupied_room()
-                        return f"Room {room_number} removed from channel {channel}. Remaining guests in channel {channel}: {self.guests_per_channel[channel]}"
-                    break  # If exponent is greater, it's not in this channel, so break early
+        for channel, base in self.channels.items():
+            if room_number % base == 0:
+                exponent = int(math.log(room_number, base))
+                if exponent <= self.guests_per_channel.get(channel, 0):
+                    self.guests_per_channel[channel] -= 1
+                    self.removed_rooms.add(room_number)
+                    if room_number == self.highest_occupied_room:
+                        self.recalculate_highest_occupied_room()
+                    return f"Room {room_number} removed from channel {channel}. Remaining guests in channel {channel}: {self.guests_per_channel[channel]}"
 
-            # If we reach here, the room was not occupied
-            self.removed_rooms.add(room_number)  # We still mark it as removed
+        self.removed_rooms.add(room_number)
         return f"Room {room_number} was unoccupied. Marked as removed."
-
-    
+    @lru_cache(maxsize=None)
     @track_time
     def is_room_occupied(self, room_number):
         if room_number in self.manual_rooms:
@@ -165,7 +135,7 @@ class Hilberts:
         for channel, base in self.channels.items():
             if room_number % base == 0:
                 exponent = int(math.log(room_number, base))
-                if exponent <= self.guests_per_channel[channel]:
+                if exponent <= self.guests_per_channel.get(channel, 0):
                     return True
         return False
 
@@ -180,27 +150,18 @@ class Hilberts:
         for channel, base in self.channels.items():
             if room_number % base == 0:
                 exponent = int(math.log(room_number, base))
-                if exponent <= self.guests_per_channel[channel]:
+                if exponent <= self.guests_per_channel.get(channel, 0):
                     return f"Room {room_number}: Occupied by guest from channel {channel}"
         return f"Room {room_number} is a valid room but currently unoccupied"
-
-    @track_time
+    @lru_cache(maxsize=None)
     def update_highest_occupied_room(self, room_number):
-        with self.lock:
-            self.highest_occupied_room = max(self.highest_occupied_room, room_number)
+        self.highest_occupied_room = max(self.highest_occupied_room, room_number)
 
-    # @track_time
-    # def add_initial_guests(self, num_guests):
-    #     self.guests_per_channel[1] = num_guests
-    #     return f"Added {num_guests} initial guests to channel 1"
-   
     @track_time
     def add_initial_guests(self, num_guests):
         self.guests_per_channel[1] = num_guests
-        #Directly update the highest occupied room during the addition of initial guests to avoid recalculations later.
         self.update_highest_occupied_room(self.channels[1] ** num_guests)
         return f"Added {num_guests} initial guests to channel 1"
-    
 
     @track_time
     def add_new_guests(self, channel, num_guests):
@@ -210,16 +171,15 @@ class Hilberts:
                 return "Error: Number of guests must be positive"
 
             base = self.channels[channel]
-            old_highest_room = base ** self.guests_per_channel[channel]
-            self.guests_per_channel[channel] += num_guests
+            old_highest_room = base ** self.guests_per_channel.get(channel, 0)
+            self.guests_per_channel[channel] = self.guests_per_channel.get(channel, 0) + num_guests
             new_highest_room = base ** self.guests_per_channel[channel]
 
-            with self.lock:
-                self.removed_rooms = {room for room in self.removed_rooms 
-                                      if room <= old_highest_room or room > new_highest_room}
+            self.removed_rooms = {room for room in self.removed_rooms 
+                                if room <= old_highest_room or room > new_highest_room}
 
-                if new_highest_room > self.highest_occupied_room:
-                    self.highest_occupied_room = new_highest_room
+            if new_highest_room > self.highest_occupied_room:
+                self.highest_occupied_room = new_highest_room
 
             return f"Added {num_guests} new guests to channel {channel}. Total guests in channel {channel}: {self.guests_per_channel[channel]}"
 
@@ -427,16 +387,10 @@ def main():
             
             elif choice == '2':
                 guests_input = input("Enter guests for channels 2-5 (comma-separated): ").split(',')
-                threads = []
                 for i, num in enumerate(guests_input, start=2):
                     if i > 5:
                         break
-                    t = threading.Thread(target=process_command, args=(hotel, f"A {i}", [num]))
-                    threads.append(t)
-                    t.start()
-                
-                for t in threads:
-                    t.join()
+                    print(hotel.add_new_guests(i, int(num)))
             
             elif choice == '3':
                 args = input("Enter room number, guest info, and channel (space-separated): ").split()
@@ -490,8 +444,8 @@ def main():
             print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    profiler = cProfile.Profile()
-    profiler.enable()
+    # profiler = cProfile.Profile()
+    # profiler.enable()
     main()
-    profiler.disable()
-    profiler.print_stats(sort='cumtime')
+    # profiler.disable()
+    # profiler.print_stats(sort='cumtime')
