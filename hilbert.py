@@ -4,6 +4,55 @@ import math
 import time as time_module
 
 
+class MinHeap:
+    def __init__(self):
+        self.heap = []
+
+    def parent(self, i):
+        return (i - 1) // 2
+
+    def left_child(self, i):
+        return 2 * i + 1
+
+    def right_child(self, i):
+        return 2 * i + 2
+
+    def swap(self, i, j):
+        self.heap[i], self.heap[j] = self.heap[j], self.heap[i]
+
+    def push(self, item):
+        self.heap.append(item)
+        self._sift_up(len(self.heap) - 1)
+
+    def pop(self):
+        if not self.heap:
+            return None
+        if len(self.heap) == 1:
+            return self.heap.pop()
+        min_val = self.heap[0]
+        self.heap[0] = self.heap.pop()
+        self._sift_down(0)
+        return min_val
+
+    def _sift_up(self, i):
+        parent = self.parent(i)
+        if i > 0 and self.heap[i][0] < self.heap[parent][0]:
+            self.swap(i, parent)
+            self._sift_up(parent)
+
+    def _sift_down(self, i):
+        min_index = i
+        left = self.left_child(i)
+        right = self.right_child(i)
+        if left < len(self.heap) and self.heap[left][0] < self.heap[min_index][0]:
+            min_index = left
+        if right < len(self.heap) and self.heap[right][0] < self.heap[min_index][0]:
+            min_index = right
+        if i != min_index:
+            self.swap(i, min_index)
+            self._sift_down(min_index)
+
+
 class Hilberts:
     def __init__(self):
         self.channels = {"Original": 2, "Bus": 3, "Train": 5, "Plane": 7, "Ship": 11}
@@ -152,20 +201,55 @@ class Hilberts:
     def update_highest_occupied_room(self, new_room):
         self.highest_occupied_room = max(self.highest_occupied_room, new_room)
 
-
     @track_time
     def sort_rooms(self, start=0, count=20):
-        all_rooms = []
+        def channel_generator(base, guests):
+            for exp in range(1, guests + 1):
+                yield base**exp
+
+        heap = MinHeap()
+        channel_iters = {}
+
+        # Initialize the heap with the first room from each channel
         for channel, base in self.channels.items():
-            all_rooms.extend(
-                base**exp for exp in range(1, self.guests_per_channel[channel] + 1)
-            )
-        all_rooms.extend(self.manual_rooms)
+            if self.guests_per_channel[channel] > 0:
+                channel_iters[channel] = channel_generator(
+                    base, self.guests_per_channel[channel]
+                )
+                first_room = next(channel_iters[channel])
+                heap.push((first_room, channel))
 
-        all_rooms.sort()
+        # Add manual rooms to the heap
+        for room in self.manual_rooms:
+            heap.push((room, "manual"))
 
-        end = min(start + count, len(all_rooms))
-        return all_rooms[start:end]
+        # Skip 'start' number of rooms
+        for _ in range(start):
+            if not heap.heap:
+                return []
+            _, channel = heap.pop()
+            if channel != "manual" and channel in channel_iters:
+                try:
+                    next_room = next(channel_iters[channel])
+                    heap.push((next_room, channel))
+                except StopIteration:
+                    pass
+
+        # Collect 'count' number of rooms
+        result = []
+        for _ in range(count):
+            if not heap.heap:
+                break
+            room, channel = heap.pop()
+            result.append(room)
+            if channel != "manual" and channel in channel_iters:
+                try:
+                    next_room = next(channel_iters[channel])
+                    heap.push((next_room, channel))
+                except StopIteration:
+                    pass
+
+        return result
 
     @track_time
     def count_empty_rooms(self):
