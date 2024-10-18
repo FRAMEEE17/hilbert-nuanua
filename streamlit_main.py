@@ -1,6 +1,6 @@
 import streamlit as st
 from hilbert import *
-
+import pandas as pd
 
 def main():
     st.set_page_config(page_title="Hilbert Nuanua Infinite Hotel", page_icon="🏨", layout="wide")
@@ -47,7 +47,7 @@ def main():
 
     elif operation == "Manage Rooms":
         st.header("Manage Rooms")
-        action = st.radio("Choose an action:", ["Add Room Manually", "Remove Room", "Find Room", "Sort Rooms"])
+        action = st.radio("Choose an action:", ["Add Room Manually", "Remove Room", "Find Room", "Sort Rooms", "Move Guests"])
         
         if action == "Add Room Manually":
             col1, col2, col3 = st.columns(3)
@@ -85,19 +85,66 @@ def main():
                 st.success(result)
                 st.info(f"Operation completed in {end_time - start_time:.6f} seconds")
         
+        # elif action == "Sort Rooms":
+        #     col1, col2 = st.columns(2)
+        #     with col1:
+        #         start = st.number_input("Start from:", min_value=0, step=1)
+        #     with col2:
+        #         count = st.number_input("Number of rooms to display:", min_value=1, step=1)
+        #     if st.button("Sort Rooms"):
+        #         with st.spinner("Sorting rooms..."):
+        #             start_time = time_module.perf_counter()
+        #             result = hotel.sort_rooms(start, count)
+        #             end_time = time_module.perf_counter()
+        #         st.write("Sorted Rooms:")
+        #         st.write(result)
+        #         st.info(f"Operation completed in {end_time - start_time:.6f} seconds")
         elif action == "Sort Rooms":
-            col1, col2 = st.columns(2)
+            st.subheader("Sort Rooms")
+            col1, col2, col3 = st.columns(3)
             with col1:
-                start = st.number_input("Start from:", min_value=0, step=1)
+                chunk_size = st.number_input("Chunk size:", min_value=1000, value=1000000, step=1000)
             with col2:
-                count = st.number_input("Number of rooms to display:", min_value=1, step=1)
+                start = st.number_input("Start from:", min_value=0, step=1)
+            with col3:
+                count = st.number_input("Number of rooms to display:", min_value=1, max_value=1000, value=20, step=1)
+            
             if st.button("Sort Rooms"):
                 with st.spinner("Sorting rooms..."):
                     start_time = time_module.perf_counter()
-                    result = hotel.sort_rooms(start, count)
+                    all_sorted_rooms = hotel.sort_rooms(chunk_size)
                     end_time = time_module.perf_counter()
-                st.write("Sorted Rooms:")
-                st.write(result)
+                    total_time = end_time - start_time
+                    
+                    # เลือกห้องตาม start และ count
+                    displayed_rooms = all_sorted_rooms[start:start+count]
+                    
+                    st.write(f"Sorted Rooms (showing {len(displayed_rooms)} out of {len(all_sorted_rooms)} total rooms):")
+                    if displayed_rooms:
+                        df = pd.DataFrame({"Room Number": displayed_rooms})
+                        st.dataframe(df)
+                    else:
+                        st.write("No rooms to display in the specified range.")
+                    
+                    st.info(f"Sorting completed in {total_time:.6f} seconds")
+                    st.info(f"Total rooms sorted: {len(all_sorted_rooms)}")
+
+                # แสดงข้อมูลเพิ่มเติมเกี่ยวกับการใช้หน่วยความจำ
+                memory_usage = hotel.memory_usage()
+                st.info(f"Current memory usage: {memory_usage} bytes")
+  
+        elif action == "Move Guests":
+            col1, col2 = st.columns(2)
+            with col1:
+                from_room = st.number_input("From room number:", min_value=1, step=1)
+            with col2:
+                to_room = st.number_input("To room number:", min_value=1, step=1)
+            if st.button("Move Guests"):
+                with st.spinner("Moving guest..."):
+                    start_time = time_module.perf_counter()
+                    result = hotel.move_guest(from_room, to_room)
+                    end_time = time_module.perf_counter()
+                st.success(result)
                 st.info(f"Operation completed in {end_time - start_time:.6f} seconds")
 
     elif operation == "Hotel Status":
@@ -120,14 +167,22 @@ def main():
 
     elif operation == "File Operations":
         st.header("File Operations")
-        filename = st.text_input("Enter filename to save room data:")
-        if st.button("Write to File"):
-            with st.spinner("Writing to file..."):
-                start_time = time_module.perf_counter()
-                result = hotel.write_to_file(filename)
-                end_time = time_module.perf_counter()
-            st.success(result)
+        if st.button("Generate File"):
+            with st.spinner("Generating file..."):
+                    start_time = time_module.perf_counter()
+                    file_content = hotel.write_to_file()
+                    end_time = time_module.perf_counter()
+                
+            st.success("File generated successfully")
             st.info(f"Operation completed in {end_time - start_time:.6f} seconds")
+
+            # สร้างปุ่มดาวน์โหลด
+            st.download_button(
+                    label="Download CSV",
+                    data=file_content,
+                    file_name="hotel_rooms.csv",
+                    mime="text/csv"
+            )
 
     st.sidebar.header("System Info")
     if st.sidebar.button("Show Memory Usage"):
