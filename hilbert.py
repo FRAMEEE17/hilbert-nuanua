@@ -1,61 +1,13 @@
 import sys
 import csv
 import math
-#from collections import defaultdict
 import time as time_module
-#from functools import lru_cache
-
-# class MinHeap:
-#     def __init__(self):
-#         self.heap = []
-
-#     def parent(self, i):
-#         return (i - 1) // 2
-
-#     def left_child(self, i):
-#         return 2 * i + 1
-
-#     def right_child(self, i):
-#         return 2 * i + 2
-
-#     def swap(self, i, j):
-#         self.heap[i], self.heap[j] = self.heap[j], self.heap[i]
-
-#     def push(self, key):
-#         self.heap.append(key)
-#         self._sift_up(len(self.heap) - 1)
-
-#     def pop(self):
-#         if not self.heap:
-#             return None
-#         if len(self.heap) == 1:
-#             return self.heap.pop()
-#         min_val = self.heap[0]
-#         self.heap[0] = self.heap.pop()
-#         self._sift_down(0)
-#         return min_val
-
-#     def _sift_up(self, i):
-#         parent = self.parent(i)
-#         if i > 0 and self.heap[i] < self.heap[parent]:
-#             self.swap(i, parent)
-#             self._sift_up(parent)
-
-#     def _sift_down(self, i):
-#         min_index = i
-#         left = self.left_child(i)
-#         right = self.right_child(i)
-#         if left < len(self.heap) and self.heap[left] < self.heap[min_index]:
-#             min_index = left
-#         if right < len(self.heap) and self.heap[right] < self.heap[min_index]:
-#             min_index = right
-#         if i != min_index:
-#             self.swap(i, min_index)
-#             self._sift_down(min_index)
-
+import os 
+#import heapq
+import tempfile
+import io
 class Hilberts:
     def __init__(self):
-        #self.channels = {1: 2, 2: 3, 3: 5, 4: 7, 5: 11}
         self.channels = {
             "Original": 2,
             "Bus": 3,
@@ -63,11 +15,9 @@ class Hilberts:
             "Plane": 7,
             "Ship": 11
         }
+        # Stores all rooms: {room_number: {"channel": channel, "guest_info": info}}
+        self.rooms = {}  
         self.guests_per_channel = {channel: 0 for channel in self.channels}
-        #self.guests_per_channel = {}
-        #self.guests_per_channel = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        self.manual_rooms = set()
-        self.manual_room_info = {}
         self.function_times = {}
         self.highest_occupied_room = 0
         self.removed_rooms = set()
@@ -84,77 +34,68 @@ class Hilberts:
             return result
         return wrapper
 
-    
     @track_time
     def add_room_manual(self, room_number, guest_info, channel):
         room_number = int(room_number)
         if room_number in self.removed_rooms:
             self.removed_rooms.remove(room_number)
-        if self.is_room_occupied(room_number):
+        if room_number in self.rooms:
             suggested_rooms = self.suggest_rooms(10)
             return f"Error: Room {room_number} is already occupied. Suggested unoccupied rooms: {', '.join(map(str, suggested_rooms))}"
-        self.manual_rooms.add(room_number)
-        self.manual_room_info[room_number] = (guest_info, channel)
+        self.rooms[room_number] = {"channel": "Manual", "guest_info": guest_info, "manual_channel": channel}
         self.update_highest_occupied_room(room_number)
         return f"Room {room_number} added manually with guest info: {guest_info}"
-    
-    
-    @track_time
-    def recalculate_highest_occupied_room(self):
-        highest_manual = max(self.manual_rooms) if self.manual_rooms else 0
-        highest_channel = max(
-            self.channels[channel] ** self.guests_per_channel[channel]
-            for channel in self.channels
-            if self.guests_per_channel[channel] > 0
-        ) if any(self.guests_per_channel.values()) else 0
-        self.highest_occupied_room = max(highest_manual, highest_channel)
 
-    
     @track_time
     def remove_room(self, room_number):
         room_number = int(room_number)
         print(f"Attempting to remove room {room_number}")
 
+        if room_number in self.rooms:
+            print(f"Room {room_number} is occupied and cannot be removed.")
+            return f"Error: Room {room_number} is occupied and cannot be removed."
+
         if room_number in self.removed_rooms:
-            print(f"Room {room_number} was already removed.")
-            return f"Room {room_number} was already removed. No action needed."
+            print(f"Room {room_number} has already been removed.")
+            return f"Room {room_number} has already been removed. No action needed."
 
-        if room_number in self.manual_rooms:
-            print(f"Room {room_number} found in manual rooms.")
-            self.manual_rooms.remove(room_number)
-            del self.manual_room_info[room_number]
-            self.removed_rooms.add(room_number)
-            if room_number == self.highest_occupied_room:
-                self.recalculate_highest_occupied_room()
-            return f"Room {room_number} removed from manual rooms"
+        # ตรวจสอบว่าห้องนี้อยู่ในช่วงที่สามารถมีอยู่ได้หรือไม่
+        if room_number > self.highest_occupied_room:
+            print(f"Room {room_number} is beyond the highest occupied room and doesn't need to be removed.")
+            return f"Room {room_number} is beyond the highest occupied room and doesn't need to be removed."
 
-        for channel, base in self.channels.items():
-            if room_number % base == 0:
-                exponent = int(math.log(room_number, base))
-                if exponent <= self.guests_per_channel.get(channel, 0):
-                    self.guests_per_channel[channel] -= 1
-                    self.removed_rooms.add(room_number)
-                    if room_number == self.highest_occupied_room:
-                        self.recalculate_highest_occupied_room()
-                    return f"Room {room_number} removed from channel {channel}. Remaining guests in channel {channel}: {self.guests_per_channel[channel]}"
-
+        # ลบห้องออกจากโครงสร้างข้อมูล
         self.removed_rooms.add(room_number)
-        return f"Room {room_number} was unoccupied. Marked as removed."
+        print(f"Room {room_number} has been removed from the data structure.")
+        return f"Room {room_number} has been removed from the data structure."
     
-    
-   
     @track_time
-    def is_room_occupied(self, room_number):
-        if room_number in self.manual_rooms:
-            return True
-        for channel, base in self.channels.items():
-            if room_number % base == 0:
-                exponent = int(math.log(room_number, base))
-                if exponent <= self.guests_per_channel.get(channel, 0):
-                    return True
-        return False
-    
-    
+    def move_guest(self, from_room, to_room):
+        print(f"Attempting to move guest from room {from_room} to room {to_room}")
+        from_room, to_room = int(from_room), int(to_room)
+        if from_room not in self.rooms:
+            print(f"Error: Room {from_room} is not occupied")
+            return f"Error: Room {from_room} is not occupied"
+        if to_room in self.rooms:
+            print(f"Error: Room {to_room} is already occupied")
+            return f"Error: Room {to_room} is already occupied"
+        
+        guest_info = self.rooms.pop(from_room)
+        self.rooms[to_room] = guest_info
+        
+        # ปรับปรุง guests_per_channel ถ้าจำเป็น
+        if guest_info['channel'] != "Manual":
+            channel = guest_info['channel']
+            base = self.channels[channel]
+            old_exponent = int(math.log(from_room, base))
+            new_exponent = int(math.log(to_room, base))
+            if old_exponent != new_exponent:
+                self.guests_per_channel[channel] = max(self.guests_per_channel[channel], new_exponent)
+        
+        self.update_highest_occupied_room(to_room)
+        print(f"Guest successfully moved from room {from_room} to room {to_room}")
+        return f"Guest successfully moved from room {from_room} to room {to_room}"
+
     @track_time
     def find_room(self, room_number):
         room_number = int(room_number)
@@ -162,62 +103,48 @@ class Hilberts:
             return f"Error: Invalid room number {room_number}. Room numbers must be positive integers."
         if room_number in self.removed_rooms:
             return f"Room {room_number} has been removed."
-        if room_number in self.manual_rooms:
-            guest_info, channel = self.manual_room_info[room_number]
-            return f"Room {room_number}: Occupied by guest ---> {guest_info} : {channel}"
-        for channel, base in self.channels.items():
-            if room_number % base == 0:
-                exponent = int(math.log(room_number, base))
-                if exponent <= self.guests_per_channel.get(channel, 0):
-                    return f"Room {room_number}: Occupied by guest from channel {channel}"
-        return f"Room {room_number} is an empty room, you can reserve it."
-    
+        if room_number in self.rooms:
+            info = self.rooms[room_number]
+            if info["channel"] == "Manual":
+                return f"Room {room_number}: Occupied by guest ---> {info['guest_info']} : {info['manual_channel']}"
+            else:
+                return f"Room {room_number}: Occupied by guest from channel {info['channel']}"
+        return f"Room {room_number} is an empty room, any guest can reserve this room."
+
     @track_time
     def add_new_guests(self, channel, num_guests):
         try:
             num_guests = int(num_guests)
-            
             if channel not in self.channels:
                 return f"Error: Invalid channel name {channel}"
-            
             if num_guests <= 0:
                 return "Error: Number of guests must be positive"
-
-            self.guests_per_channel[channel] += num_guests
-            new_highest_room = self.channels[channel] ** self.guests_per_channel[channel]
-            
-            if sum(self.guests_per_channel.values()) > self.large_input_threshold:
-                self.highest_occupied_room = max(self.highest_occupied_room, new_highest_room)
-            else:
-                self.update_highest_occupied_room(new_highest_room)
-            
+            base = self.channels[channel]
+            for _ in range(num_guests):
+                self.guests_per_channel[channel] += 1
+                room_number = base ** self.guests_per_channel[channel]
+                self.rooms[room_number] = {"channel": channel, "guest_info": f"Guest from {channel}"}
+            new_highest_room = base ** self.guests_per_channel[channel]
+            self.update_highest_occupied_room(new_highest_room)
             return f"Added {num_guests} new guests to channel {channel}. Total guests in channel {channel}: {self.guests_per_channel[channel]}"
-        
         except ValueError:
             return f"Error: Invalid input for channel {channel} or number of guests {num_guests}"
 
-        
-    # @track_time
-    # def add_initial_guests(self, num_guests):
-    #     num_guests = int(num_guests)  # Ensure num_guests is an integer
-    #     self.guests_per_channel[1] = num_guests
-    #     return f"Added {num_guests} initial guests to channel 1"
-    
     @track_time
     def add_initial_guests(self, num_guests):
         try:
             num_guests = int(num_guests)
             if num_guests <= 0:
                 return "Error: Number of guests must be positive"
-            
             if self.guests_per_channel["Original"] > 0:
                 return "Error: Initial guests have already been added. Use 'Add guests to channels' to add more guests."
-            
             self.guests_per_channel["Original"] = num_guests
-            new_highest_room = self.channels["Original"] ** num_guests
-            
+            base = self.channels["Original"]
+            for i in range(1, num_guests + 1):
+                room_number = base ** i
+                self.rooms[room_number] = {"channel": "Original", "guest_info": f"Initial Guest {i}"}
+            new_highest_room = base ** num_guests
             self.update_highest_occupied_room(new_highest_room)
-            
             return f"Added {num_guests} initial guests to the Original channel"
         except ValueError:
             return "Error: Invalid number of guests"
@@ -225,185 +152,170 @@ class Hilberts:
     def update_highest_occupied_room(self, new_room):
         self.highest_occupied_room = max(self.highest_occupied_room, new_room)
 
-    
-    # @track_time
-    # def sort_rooms(self, start=0, count=20):
-    #     def room_generator():
-    #         try:
-    #             yield from self.manual_rooms
-    #             for channel, base in self.channels.items():
-    #                 exponent = 1
-    #                 while exponent <= self.guests_per_channel[channel]:
-    #                     yield base ** exponent
-    #                     exponent += 1
-    #         except Exception as e:
-    #             print(f"Error in room_generator: {e}")
-    #             raise
-
-    #     print(f"Starting sort_rooms with start={start} and count={count}")
-    #     heap = MinHeap()
-    #     try:
-    #         for i, room in enumerate(room_generator()):
-    #             print(f"Generated room {room} at index {i}")
-    #             if i < start:
-    #                 continue
-    #             if len(heap.heap) < count:
-    #                 heap.push(-room)  # Use negative for max-heap behavior
-    #             elif -room > heap.heap[0]:
-    #                 heap.pop()
-    #                 heap.push(-room)
-    #             if len(heap.heap) == count and i >= start + count - 1:
-    #                 break
-    #     except Exception as e:
-    #         print(f"Error during room generation or heap operations: {e}")
-    #         raise
-
-    #     try:
-    #         sorted_rooms = sorted(-room for room in heap.heap)
-    #         print(f"Sorted rooms: {sorted_rooms}")
-    #         return sorted_rooms
-    #     except Exception as e:
-    #         print(f"Error during sorting: {e}")
-    #         raise
+    def recalculate_highest_occupied_room(self):
+        self.highest_occupied_room = max(self.rooms.keys()) if self.rooms else 0
 
     @track_time
-    def sort_rooms(self, start=0, count=20):
-        def room_generator():
-            yield from self.manual_rooms
-            for channel, base in self.channels.items():
-                for exp in range(1, self.guests_per_channel[channel] + 1):
-                    yield base ** exp
+    def sort_rooms(self, chunk_size=1000000):
+        print(f"Sorting rooms with chunk size: {chunk_size}")
+        all_rooms = set(self.rooms.keys()) - self.removed_rooms
+        if len(all_rooms) < chunk_size:
+            print("Using regular sorting")
+            return sorted(all_rooms)
+        
+        print("Using External Sorting")
+        temp_files = []
+        
+        # แบ่งข้อมูลเป็น chunks และเรียงลำดับแต่ละ chunk
+        for i in range(0, len(all_rooms), chunk_size):
+            print(f"Processing chunk {i // chunk_size + 1}")
+            chunk = sorted(list(all_rooms)[i:i+chunk_size])
+            temp_file = tempfile.NamedTemporaryFile(delete=False, mode='w+')
+            for room in chunk:
+                temp_file.write(f"{room}\n")
+            temp_file.close()
+            temp_files.append(temp_file.name)
+        
+        print(f"Created {len(temp_files)} temporary files")
+        
+        # ใช้ k-way merge สำหรับ chunks ที่เรียงลำดับแล้ว
+        sorted_rooms = self._merge_sorted_files(temp_files)
+        
+        # ลบไฟล์ชั่วคราว
+        for file in temp_files:
+            os.unlink(file)
+        
+        print(f"Sorting complete. Total rooms sorted: {len(sorted_rooms)}")
+        return sorted_rooms
 
-        def sift_down(arr, start, end):
-            root = start
-            while True:
-                child = 2 * root + 1
-                if child > end:
-                    break
-                if child + 1 <= end and arr[child] < arr[child + 1]:
-                    child += 1
-                if arr[root] < arr[child]:
-                    arr[root], arr[child] = arr[child], arr[root]
-                    root = child
-                else:
-                    break
+    def _merge_sorted_files(self, file_list):
+        heap = []
+        sorted_rooms = []
+        open_files = []
+        
+        # เปิดทุกไฟล์และเพิ่มค่าแรกลงใน heap
+        for filename in file_list:
+            file = open(filename, 'r')
+            open_files.append(file)
+            first_line = file.readline().strip()
+            if first_line:
+                self._heap_push(heap, (int(first_line), file))
+        
+        # ทำ k-way merge
+        while heap:
+            value, file = self._heap_pop(heap)
+            sorted_rooms.append(value)
+            next_line = file.readline().strip()
+            if next_line:
+                self._heap_push(heap, (int(next_line), file))
+        
+        # ปิดไฟล์ทั้งหมด
+        for file in open_files:
+            file.close()
+        
+        return sorted_rooms
 
-        if sum(self.guests_per_channel.values()) > self.extreme_input_threshold:
-            # For extremely large inputs, use a simple selection algorithm
-            result = []
-            for i, room in enumerate(room_generator()):
-                if i >= start:
-                    if len(result) < count:
-                        result.append(room)
-                    elif room < max(result):
-                        result.remove(max(result))
-                        result.append(room)
-                if len(result) == count and i >= start + count - 1:
-                    break
-            return sorted(result)
-        else:
-            # For smaller inputs, use a heap-based approach
-            heap = []
-            for i, room in enumerate(room_generator()):
-                if i < start:
-                    continue
-                if len(heap) < count:
-                    heap.append(room)
-                    if len(heap) == count:
-                        # Build the heap
-                        for j in range((count - 2) // 2, -1, -1):
-                            sift_down(heap, j, count - 1)
-                elif room < heap[0]:
-                    heap[0] = room
-                    sift_down(heap, 0, count - 1)
-                if len(heap) == count and i >= start + count - 1:
-                    break
-            
-            # Sort the heap
-            for end in range(count - 1, 0, -1):
-                heap[0], heap[end] = heap[end], heap[0]
-                sift_down(heap, 0, end - 1)
-            
-            return heap
+    def _heap_push(self, heap, item):
+        heap.append(item)
+        self._sift_up(heap, len(heap) - 1)
 
-    
+    def _heap_pop(self, heap):
+        if not heap:
+            return None
+        if len(heap) == 1:
+            return heap.pop()
+        min_val = heap[0]
+        heap[0] = heap.pop()
+        self._sift_down(heap, 0)
+        return min_val
+
+    def _sift_up(self, heap, i):
+        parent = (i - 1) // 2
+        while i > 0 and heap[i][0] < heap[parent][0]:
+            heap[i], heap[parent] = heap[parent], heap[i]
+            i = parent
+            parent = (i - 1) // 2
+
+    def _sift_down(self, heap, i):
+        min_index = i
+        left = 2 * i + 1
+        right = 2 * i + 2
+        if left < len(heap) and heap[left][0] < heap[min_index][0]:
+            min_index = left
+        if right < len(heap) and heap[right][0] < heap[min_index][0]:
+            min_index = right
+        if i != min_index:
+            heap[i], heap[min_index] = heap[min_index], heap[i]
+            self._sift_down(heap, min_index)
+
     @track_time
     def count_empty_rooms(self):
         if sum(self.guests_per_channel.values()) > self.extreme_input_threshold:
-            # For extremely large inputs, use a mathematical approach
-            return "Infinite (too large to count)" # There are infinitely many empty rooms
+            return "Infinite (too large to count)"
         else:
-            total_occupied = sum(self.guests_per_channel.values()) + len(self.manual_rooms)
-            return max(0, self.highest_occupied_room - total_occupied)
-    
+            return max(0, self.highest_occupied_room - len(self.rooms))
+
     def suggest_rooms(self, count):
-        count = int(count)  
+        count = int(count)
         suggested = []
         room = 1
         while len(suggested) < count:
-            if not self.is_room_occupied(room):
+            if room not in self.rooms and room not in self.removed_rooms:
                 suggested.append(room)
             room += 1
         return suggested
 
     def memory_usage(self):
         return sum(sys.getsizeof(obj) for obj in vars(self).values())
-    
-  
+
     def get_function_times(self):
-        return {func: f"{time:.19f}" for func, time in self.function_times.items()}
+        return {func: f"{time:.6f}" for func, time in self.function_times.items()}
 
     # @track_time
     # def write_to_file(self, filename):
     #     with open(filename, 'w', newline='') as file:
     #         writer = csv.writer(file)
-    #         writer.writerow(["Room Number", "Channel"])
-    #         for channel, base in self.channels.items():
-    #             for i in range(1, self.guests_per_channel[channel] + 1):
-    #                 writer.writerow([base ** i, f"channel {channel}"])
-    #         for room in self.manual_rooms:
-    #             writer.writerow([room, "manual"])
+    #         writer.writerow(["Room Number", "Channel", "Status", "Guest Info"])
+    #         for room, info in sorted(self.rooms.items()):
+    #             status = "Removed" if room in self.removed_rooms else "Occupied"
+    #             channel = info['manual_channel'] if info['channel'] == "Manual" else info['channel']
+    #             writer.writerow([room, channel, status, info['guest_info']])
     #     return f"Data written to {filename}"
 
-    
-    # @track_time
-    # def write_to_file(self, filename):
-    #     def row_generator():
-    #         yield ["Room Number", "Channel"]
-    #         for channel, base in self.channels.items():
-    #             for exp in range(1, self.guests_per_channel[channel] + 1):
-    #                 yield [base ** exp, f"channel {channel}"]
-    #         for room, (guest_info, channel) in self.manual_rooms.items():
-    #             yield [room, f"manual - {guest_info}"]
-
-    #     with open(filename, 'w', newline='') as file:
-    #         writer = csv.writer(file)
-    #         for row in row_generator():
-    #             writer.writerow(row)
-    #     return f"Data written to {filename}"
-
+    def channel_to_vehicle_numbers(self, channel):
+        # แปลงช่องทางเป็นรหัสยานพาหนะ
+        channel_order = ["Original", "Bus", "Train", "Plane", "Ship"]
+        vehicle_numbers = [1] * 5  # เริ่มต้นด้วย [1, 1, 1, 1, 1]
+        if channel in channel_order:
+            index = channel_order.index(channel)
+            vehicle_numbers[index] = index + 1
+        return f"no_{'_'.join(map(str, vehicle_numbers))}"
     @track_time
-    def write_to_file(self, filename):
-        def row_generator():
-            yield ["Room Number", "Channel", "Status"]
-            for channel, base in self.channels.items():
-                for exp in range(1, self.guests_per_channel[channel] + 1):
-                    room = base ** exp
-                    status = "Removed" if room in self.removed_rooms else "Occupied"
-                    yield [room, channel, status]
-            for room, (guest_info, channel) in self.manual_room_info.items():
-                status = "Removed" if room in self.removed_rooms else "Occupied"
-                yield [room, f"Manual - {guest_info}", status]
+    def write_to_file(self):
+        print("Preparing data for file writing")
+        sorted_rooms = self.sort_rooms()
+        print(f"Total rooms to write: {len(sorted_rooms)}")
 
-        with open(filename, 'w', newline='') as file:
-            writer = csv.writer(file)
-            for row in row_generator():
-                writer.writerow(row)
-        return f"Data written to {filename}"
-    
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Room Number", "Channel Info"])
+        
+        for room in sorted_rooms:
+            if room not in self.removed_rooms:
+                info = self.rooms[room]
+                if info['channel'] == "Manual":
+                    channel_info = f"Manual - {info['manual_channel']}"
+                else:
+                    channel_info = self.channel_to_vehicle_numbers(info['channel'])
+                writer.writerow([room, channel_info])
+
+        print("Data preparation complete")
+        return output.getvalue()
+
+
     @track_time
     def get_hotel_status(self):
-        total_guests = sum(self.guests_per_channel.values()) + len(self.manual_rooms)
+        total_guests = sum(self.guests_per_channel.values())
         occupied_channels = sum(1 for guests in self.guests_per_channel.values() if guests > 0)
         empty_rooms = self.count_empty_rooms()
 
@@ -413,29 +325,29 @@ class Hilberts:
 ## Overview
 - **Total Guests:** {total_guests}
 - **Occupied Channels:** {occupied_channels} out of {len(self.channels)}
-- **Manually Added Rooms:** {len(self.manual_rooms)}
+- **Total Occupied Rooms:** {len(self.rooms)}
 - **Highest Occupied Room:** {self.highest_occupied_room}
 - **Empty Rooms** (up to highest occupied): {empty_rooms}
-
+- **Removed Rooms:** {len(self.removed_rooms)}\n
 ## Guests per Channel
 
 | Channel | Guests |
 |---------|--------|
 """
+        
         for channel, guests in self.guests_per_channel.items():
             if guests > 0:
                 status += f"| {channel:<7} | {guests:<6} |\n"
 
         status += "\n## Manual Rooms\n\n"
-        if self.manual_rooms:
+        manual_rooms = [room for room, info in self.rooms.items() if info['channel'] == "Manual"]
+        if manual_rooms:
             status += "| Room Number | Guest Info | Channel |\n"
             status += "|-------------|------------|--------|\n"
-            for room, (guest_info, channel) in self.manual_room_info.items():
-                status += f"| {room:<11} | {guest_info:<10} | {channel:<7} |\n"
+            for room in manual_rooms:
+                info = self.rooms[room]
+                status += f"| {room:<11} | {info['guest_info']:<10} | {info['manual_channel']:<7} |\n"
         else:
             status += "No manually added rooms.\n"
 
         return status
-
-
-
